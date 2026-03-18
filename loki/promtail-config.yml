@@ -1,0 +1,94 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Docker container logs
+  - job_name: containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: containerlogs
+          __path__: /var/lib/docker/containers/*/*log
+
+    pipeline_stages:
+      # Parse Docker JSON logs
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            time: time
+
+      # Parse our structured JSON logs
+      - json:
+          expressions:
+            level: level
+            message: message
+            correlationId: correlationId
+            service: service
+            context: context
+          source: output
+
+      # Set log level label
+      - labels:
+          level:
+          service:
+          context:
+          correlationId:
+
+      # Output the message
+      - output:
+          source: message
+
+      # Add timestamp from log
+      - timestamp:
+          source: time
+          format: RFC3339Nano
+
+  # Syslog (if needed)
+  - job_name: syslog
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          __path__: /var/log/syslog
+
+  # Backend application logs (direct file)
+  - job_name: backend
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: backend
+          app: tasks-backend
+          __path__: /var/log/tasks-to-do/backend/*.log
+
+    pipeline_stages:
+      # Parse JSON logs
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            correlationId: correlationId
+            service: service
+
+      - labels:
+          level:
+          service:
+          correlationId:
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+      - output:
+          source: message

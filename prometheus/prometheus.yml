@@ -1,0 +1,127 @@
+# =============================================================================
+# Prometheus Configuration - Consolidado
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'nova-stack'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Alert rules
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# =============================================================================
+# Scrape Configurations
+# =============================================================================
+scrape_configs:
+
+  # -------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # -------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # -------------------------------------------------------------------------
+  # Infrastructure Services
+  # -------------------------------------------------------------------------
+
+  # Keycloak metrics
+  - job_name: 'keycloak'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['keycloak:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'keycloak'
+
+  # Nginx metrics (nginx-prometheus-exporter)
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'nginx'
+
+  # Traefik metrics
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8080']
+
+  # -------------------------------------------------------------------------
+  # Database & Cache
+  # -------------------------------------------------------------------------
+
+  # PostgreSQL Exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis Exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis'
+
+  # -------------------------------------------------------------------------
+  # Application Services
+  # -------------------------------------------------------------------------
+
+  # Backend API metrics
+  - job_name: 'backend'
+    metrics_path: /api/v1/metrics
+    static_configs:
+      - targets: ['backend:3000']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'backend'
+
+  # -------------------------------------------------------------------------
+  # Host & Container Metrics
+  # -------------------------------------------------------------------------
+
+  # Node Exporter (host metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # cAdvisor (container metrics)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # -------------------------------------------------------------------------
+  # Docker Swarm Discovery (Production)
+  # -------------------------------------------------------------------------
+  - job_name: 'docker-swarm'
+    dockerswarm_sd_configs:
+      - host: unix:///var/run/docker.sock
+        role: tasks
+    relabel_configs:
+      - source_labels: [__meta_dockerswarm_task_state]
+        regex: running
+        action: keep
+      - source_labels: [__meta_dockerswarm_service_label_prometheus_scrape]
+        regex: "true"
+        action: keep
+      - source_labels: [__meta_dockerswarm_service_label_prometheus_path]
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__meta_dockerswarm_service_name]
+        target_label: service
